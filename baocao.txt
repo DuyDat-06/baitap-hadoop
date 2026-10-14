@@ -1,0 +1,41 @@
+1. Mô tả dữ liệu đầu vào
+File orders_2026_09.csv chứa 1.500 giao dịch đơn hàng tháng 09/2026 (không tính dòng tiêu đề),
+gồm các trường: transaction_id, order_date, order_time, province, category, channel, quantity,
+unit_price, amount, status, shipping_days. Trạng thái giao dịch gồm SUCCESS (1.240), FAILED (142)
+và RETURNED (118). Theo yêu cầu, chỉ các giao dịch SUCCESS được tính vào doanh thu. Khóa phân
+nhóm là category, giá trị cộng dồn là amount.
+
+2. Mapper: key–value phát sinh
+Mapper đọc từng dòng CSV. Nếu status = SUCCESS thì xuất một cặp key = category, value =
+amount (cách nhau bằng dấu tab); các dòng FAILED và RETURNED bị bỏ qua. Ví dụ:
+Electronics  12741238. Theo log của job, mapper nhận 1501 bản ghi vào (1500 giao dịch và 1
+dòng tiêu đề) và xuất 1240 cặp key–value, đúng bằng số giao dịch SUCCESS.
+
+3. Shuffle/Sort và Reducer
+Giai đoạn Shuffle/Sort gom các cặp có cùng category về cùng một reducer và sắp xếp theo key.
+Reducer cộng dồn các amount theo từng category rồi ghi ra cặp category – tổng doanh thu. Log ghi
+nhận Reduce input records = 1240, Reduce input groups = 8 và Reduce output records = 8, tương
+ứng 8 nhóm sản phẩm.
+
+4. Nhận xét
+Electronics dẫn đầu với 3.703.769.311 VND, chiếm 76.9% tổng doanh thu và gấp hơn 9 lần nhóm
+đứng thứ hai là Home. Doanh thu Electronics đến từ giá trị mỗi đơn rất cao (trung bình khoảng 12.5
+triệu VND/đơn), trong khi Fashion có nhiều giao dịch hơn (233 so với 296) nhưng giá trị mỗi đơn chỉ
+khoảng 0.94 triệu VND. Ba nhóm Electronics, Home và Fashion cùng chiếm khoảng 90% doanh thu.
+Về tồn kho, ban vận hành cần ưu tiên dự trữ và theo dõi sát Electronics vì thiếu hàng ở nhóm này
+ảnh hưởng lớn nhất đến doanh thu. Về khuyến mại, nên đẩy ưu đãi cho Home và Fashion để giảm
+phụ thuộc vào một nhóm duy nhất. Về giao hàng, đơn Electronics giá trị cao cần nguồn lực vận
+chuyển an toàn và đúng hạn hơn. Lưu ý kết quả chỉ tính SUCCESS nên không phản ánh các đơn
+FAILED và RETURNED.
+
+5. HDFS, YARN và hạn chế của xử lý batch
+HDFS: dữ liệu được lưu tại /user/student/ecommerce/input/orders_2026_09.csv. HDFS chia file
+thành các block, lưu nhiều bản sao trên các DataNode để chịu lỗi, còn NameNode quản lý metadata.
+Kết quả ghi vào /user/student/ecommerce/output/revenue_by_category (gồm file _SUCCESS và
+part-00000).
+
+YARN: trong môi trường Hadoop đầy đủ, YARN cấp tài nguyên và lập lịch cho các task mapper và
+reducer. Trong bài này job chạy bằng LocalJobRunner trên Google Colab (mã job dạng job_local...),
+nên không đi qua YARN ResourceManager.
+Hạn chế của xử lý batch: kết quả chỉ có sau khi job chạy xong trên cả lô dữ liệu, nên không phản ánh
+đơn hàng mới theo thời gian thực. Muốn cập nhật báo cáo phải chạy lại job
